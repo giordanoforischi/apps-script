@@ -6,7 +6,7 @@ This simple AppsScript project enables the user to select cells and call a micro
 
 * Configure AppsScript to display manifest file.
 * Add this code page to AppsScript, including appsscript.json oauth scopes.
-* Add both Script Properties to the config panel (TEXT_COLUMN =[] and MAX_CELLS_LIMIT=250)
+* Add both Script Properties to the config panel (TEXT_COLUMN =[] and MAX_CELLS_LIMIT=250 AND CF_URL='')
 * Link the worksheet to your Cloud Function's GCP project ID..
 * After linking Google Sheet to GCP, it's necessary to redeploy the Cloud Function in order to reflect client ID changes.
 * Add menu open function to triggers.
