@@ -1,88 +1,84 @@
-// Function to create a custom menu
-function onOpen() {
-  const ui = SpreadsheetApp.getUi();
-  ui.createMenu('URL2Text')
-    .addItem('Process Selected Cells', 'processSelectedCells')
-    .addItem('Set Default Text Column', 'setTextColumn')
-    .addToUi();
-};
-
-// Function to process selected cells
 function processSelectedCells() {
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
-  const selection = sheet.getActiveRange();
+  const rangeList = sheet.getActiveRangeList();
   const maxLimit = parseInt(PropertiesService.getScriptProperties().getProperty('MAX_CELLS_LIMIT'));
-  
-  let specifiedColumn = 0; // Initialize specifiedColumn
-  
-  const textColumnInfoStr = PropertiesService.getScriptProperties().getProperty('TEXT_COLUMN');
-  if (textColumnInfoStr) {
-    const textColumnInfoArr = JSON.parse(textColumnInfoStr);
-    const sheetId = sheet.getSheetId();
-
-    const textColumnInfo = textColumnInfoArr.find(info => info.sheetId === sheetId);
-    if (textColumnInfo) {
-      specifiedColumn = textColumnInfo.column;
-    } else {
-      SpreadsheetApp.getActiveSpreadsheet().toast("Your default URL text column isn't set for this sheet! Please use the menu to set a column.", 'Error', 5);
-      return;
-    }
-  } else {
-    SpreadsheetApp.getActiveSpreadsheet().toast("Your default URL text column isn't set! Please use the menu to set a column.", 'Error', 5);
-    return;
-  }
-  
-  if (specifiedColumn === 0) {
-    SpreadsheetApp.getActiveSpreadsheet().toast("Your default URL text column isn't set! Please use the menu to set a column.", 'Error', 5);
-    return;
-  }
+  const specifiedColumn = getSpecifiedColumn(sheet);
 
   // Check if any cells are selected
-  if (selection.getNumRows() === 0 || selection.getNumColumns() === 0) {
+  if (!rangeList || rangeList.getRanges().length === 0) {
     SpreadsheetApp.getActiveSpreadsheet().toast('No cells selected!', 'Error', 5);
     return;
-  }
+  };
 
-  // Check if selected cells are to the right of the specified column
-  if (selection.getColumn() > specifiedColumn) {
-    SpreadsheetApp.getActiveSpreadsheet().toast("Selected cells can't be to the right of the URL content column!", 'Error', 5);
-    return;
-  }
+  // Build array of cell objects with cell address and value
+  const cellObjects = [];
+  rangeList.getRanges().forEach(range => {
+    range.getValues().forEach((row, rowIndex) => {
+      row.forEach((cellValue, colIndex) => {
+        const cell = range.getCell(rowIndex + 1, colIndex + 1);
+        const cellAddress = cell.getA1Notation();
+        if (colIndex + 1 <= specifiedColumn && cellValue !== '') {
+          cellObjects.push({ address: cellAddress, url: cellValue });
+        }
+      });
+    });
+  });
 
-  // Check if the number of selected non-empty cells exceeds the specified limit
-  if (selection.getValues().flat().filter(value => value !== '').length > maxLimit) {
+  // Check if number of non-empty cells exceeds the specified limit
+  if (cellObjects.length > maxLimit) {
     SpreadsheetApp.getActiveSpreadsheet().toast(`Number of selected non-empty cells exceeds the specified limit of ${maxLimit}!`, 'Error', 5);
     return;
   }
 
-  // Process each selected cell
-  selection.getValues().forEach((row, rowIndex) => {
-    row.forEach((cellValue, colIndex) => {
-      const cell = selection.getCell(rowIndex + 1, colIndex + 1);
-      if (cellValue !== '') {
-        const parsedValue = fetchFromFunction(cellValue).substring(0, 49999);
-        sheet.getRange(cell.getRow(), specifiedColumn).setValue(parsedValue);
-      }
+  // Define the chunk size
+  const chunkSize = 75;
+  // Initialize an array to hold the chunked arrays
+  const chunkedArrays = [];
+
+  // Split cellObjects into chunks of size chunkSize
+  cellObjects.forEach((_, index) => {
+    if (index % chunkSize === 0) {
+      chunkedArrays.push(cellObjects.slice(index, index + chunkSize));
+    }
+  });
+
+  // Make requests for each chunk using fetchAll
+  const url = PropertiesService.getScriptProperties().getProperty('CF_URL');
+  const requests = chunkedArrays.map(chunk => {
+    return {
+      url: url, muteHttpExceptions: true, method: 'POST',
+      headers: { 'Authorization': `Bearer ${ScriptApp.getIdentityToken()}`, 'Content-Type': 'application/json' },
+      payload: JSON.stringify({ cells: chunk })
+    };
+  });
+  const responses = UrlFetchApp.fetchAll(requests);
+
+  // Process responses and update the sheet
+  responses.forEach((response, index) => {
+    const responseData = JSON.parse(response.getContentText());
+    const chunk = chunkedArrays[index];
+    responseData.forEach((data, dataIndex) => {
+      const cellObject = chunk[dataIndex];
+      const urlText = data.urlText;
+      const row = sheet.getRange(cellObject.address).getRow();
+      sheet.getRange(row, specifiedColumn).setValue(urlText.substring(0, 49999));
     });
   });
 }
 
-function fetchFromFunction(url) {
- // This Cloud Function is a microservice that fetches HTML from a URL and returns the visible text on the page.
-  const cloudFunctionURL = parseInt(PropertiesService.getScriptProperties().getProperty('CF_URL'));
-  const options = {
-    muteHttpExceptions: true,
-    method: 'POST',
-    headers: { 'Authorization': `Bearer ${ScriptApp.getIdentityToken()}`, 'Content-type': 'application/json' },
-    payload: JSON.stringify({ "url": url })
-  };
-
-  const response = UrlFetchApp.fetch(cloudFunctionURL, options);
-  const code = response.getResponseCode();
-  if (code === 401 || code === 501) {
-    return 'Error, contact your system administrator.';
+function getSpecifiedColumn(sheet) {
+  const textColumnInfoStr = PropertiesService.getScriptProperties().getProperty('TEXT_COLUMN');
+  if (textColumnInfoStr) {
+    const textColumnInfoArr = JSON.parse(textColumnInfoStr);
+    const sheetId = sheet.getSheetId();
+    const textColumnInfo = textColumnInfoArr.find(info => info.sheetId === sheetId);
+    if (textColumnInfo) {
+      return textColumnInfo.column;
+    } else {
+      throw new Error("Your default URL text column isn't set for this sheet! Please use the menu to set a column.");
+    }
   } else {
-    return response.getContentText();
+    throw new Error("Your default URL text column isn't set! Please use the menu to set a column.");
   }
 }
 
