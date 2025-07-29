@@ -1,0 +1,10 @@
+**/__pycache__
+**/_pycache_
+**/env
+**/venv
+
+**/node_modules
+_deployment_config.json
+**/*.ipynb
+
+*/__deployment_config.json
