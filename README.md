@@ -1,6 +1,6 @@
 # AppsScript snippets and projects
 
-This is an AppsScript projects repo with some useful code snippets.
+This is an AppsScript repo with some useful code snippets and small projects.
 
 ## Links and documentation
 
